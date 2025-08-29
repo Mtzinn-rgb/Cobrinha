@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Jogo da Cobrinha</title>
+<style>
+  body {
+    margin:0;
+    font-family: Arial;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    height: 100vh;
+    background: #111;
+    color: white;
+    overflow: hidden;
+  }
+  canvas#game {
+    border: 2px solid #333;
+    background: black;
+  }
+
+  /* Flash e overlay */
+  #flash, #overlay {
+    position: fixed;
+    top:0; left:0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  #flash { background: white; z-index:10; animation: flashAnim 0.5s ease; }
+  @keyframes flashAnim { from{opacity:1;} to{opacity:0;} }
+  #overlay {
+    background: black;
+    color: white;
+    z-index:20;
+    font-size:32px;
+    flex-direction: column;
+    cursor:pointer;
+  }
+
+  #confetes {
+    position: fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    pointer-events:none;
+    z-index:30;
+  }
+  .confete {
+    position:absolute;
+    width:10px; height:10px;
+    border-radius:50%;
+    opacity:0.9;
+    animation: cair 3s linear forwards;
+  }
+  @keyframes cair { to{ transform:translateY(100vh) rotate(720deg); opacity:0; } }
+
+  #reiniciarBtn {
+    display:none;
+    margin-top:20px;
+    padding:10px 20px;
+    font-size:20px;
+    border-radius:8px;
+    border:none;
+    background:green;
+    color:white;
+    cursor:pointer;
+  }
+
+  /* D-pad mobile */
+  #dpad {
+    position: fixed;
+    bottom:20px; left:20px;
+    width:120px; height:120px;
+    border-radius:50%;
+    background: rgba(200,200,200,0.4);
+    touch-action: none;
+    z-index:50;
+  }
+  #dpad .stick {
+    position:absolute;
+    width:40px; height:40px;
+    border-radius:50%;
+    background: rgba(100,100,100,0.8);
+    left:40px; top:40px;
+    pointer-events:none;
+  }
+  @media (min-width:769px){ #dpad{ display:none; } }
+</style>
+</head>
+<body>
+<h1>Jogo da Cobrinha</h1>
+<canvas id="game" width="400" height="400"></canvas>
+<div id="flash"></div>
+<div id="overlay"></div>
+<div id="confetes"></div>
+<button id="reiniciarBtn" onclick="reiniciar()">Reiniciar</button>
+
+<div id="dpad">
+  <div class="stick"></div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const box = 20;
+const winScore = 10;
+
+let snake, direction, food, score, speed, gameOver;
+const dpad = document.getElementById("dpad");
+const stick = dpad.querySelector(".stick");
+let dpadTouchId = null;
+
+function iniciarJogo(){
+  snake=[{x:9*box,y:10*box}];
+  direction=null;
+  food={x:Math.floor(Math.random()*19+1)*box, y:Math.floor(Math.random()*19+1)*box};
+  score=0;
+  speed=200;
+  gameOver=false;
+  document.getElementById("reiniciarBtn").style.display="none";
+  document.getElementById("overlay").style.display="none";
+  draw();
+}
+
+// teclado PC
+document.addEventListener("keydown", e=>{
+  const key = e.key.toLowerCase();
+  if((key==="arrowleft"||key==="a") && direction!=="RIGHT") direction="LEFT";
+  if((key==="arrowup"||key==="w") && direction!=="DOWN") direction="UP";
+  if((key==="arrowright"||key==="d") && direction!=="LEFT") direction="RIGHT";
+  if((key==="arrowdown"||key==="s") && direction!=="UP") direction="DOWN";
+});
+
+// D-pad mobile
+dpad.addEventListener("touchstart", e=>{
+  e.preventDefault();
+  if(dpadTouchId===null){
+    const touch=e.changedTouches[0];
+    dpadTouchId=touch.identifier;
+    updateStick(touch);
+  }
+});
+dpad.addEventListener("touchmove", e=>{
+  e.preventDefault();
+  for(let t of e.changedTouches){
+    if(t.identifier===dpadTouchId) updateStick(t);
+  }
+});
+dpad.addEventListener("touchend", e=>{
+  for(let t of e.changedTouches){
+    if(t.identifier===dpadTouchId){ dpadTouchId=null; stick.style.left="40px"; stick.style.top="40px"; }
+  }
+});
+
+function updateStick(touch){
+  const rect=dpad.getBoundingClientRect();
+  const x = touch.clientX - rect.left;
+  const y = touch.clientY - rect.top;
+  stick.style.left=Math.min(Math.max(x-20,0),80)+"px";
+  stick.style.top=Math.min(Math.max(y-20,0),80)+"px";
+  const dx = x-60, dy=y-60;
+  if(Math.abs(dx)>Math.abs(dy)){
+    if(dx>0 && direction!=="LEFT") direction="RIGHT";
+    if(dx<0 && direction!=="RIGHT") direction="LEFT";
+  } else {
+    if(dy>0 && direction!=="UP") direction="DOWN";
+    if(dy<0 && direction!=="DOWN") direction="UP";
+  }
+}
+
+function draw(){
+  if(gameOver) return;
+  ctx.fillStyle=window.innerWidth<769?"#ddd":"black";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  for(let i=0;i<snake.length;i++){
+    ctx.fillStyle=i===0?"lime":"green";
+    ctx.fillRect(snake[i].x,snake[i].y,box,box);
+  }
+  ctx.fillStyle="red";
+  ctx.fillRect(food.x,food.y,box,box);
+
+  let snakeX=snake[0].x, snakeY=snake[0].y;
+  if(direction==="LEFT") snakeX-=box;
+  if(direction==="UP") snakeY-=box;
+  if(direction==="RIGHT") snakeX+=box;
+  if(direction==="DOWN") snakeY+=box;
+
+  if(snakeX===food.x && snakeY===food.y){
+    score++;
+    food={x:Math.floor(Math.random()*19+1)*box, y:Math.floor(Math.random()*19+1)*box};
+    if(score%2===0 && speed>60) speed-=20;
+  } else snake.pop();
+
+  let newHead={x:snakeX,y:snakeY};
+  if(snakeX<0||snakeY<0||snakeX>=canvas.width||snakeY>=canvas.height||snake.some(s=>s.x===newHead.x&&s.y===newHead.y)){
+    gameOver=true;
+    document.getElementById("reiniciarBtn").style.display="block";
+    return;
+  }
+  snake.unshift(newHead);
+
+  ctx.fillStyle="white";
+  ctx.font="20px Arial";
+  ctx.fillText("Pontos: "+score, box, box);
+
+  if(score>=winScore){ gameOver=true; vitoria(); return;}
+  setTimeout(draw,speed);
+}
+
+function vitoria(){
+  const flash=document.getElementById("flash");
+  flash.style.display="flex";
+  setTimeout(()=>{flash.style.display="none"; iniciarMensagens();},500);
+}
+
+function iniciarMensagens(){
+  const mensagens=["Você ganhou!","Quer saber seu prêmio?","Quer mesmo???","Então...","VOCÊ É GAY!"];
+  let i=0;
+  const overlay=document.getElementById("overlay");
+  overlay.style.display="flex";
+  overlay.innerHTML=mensagens[i];
+  overlay.onclick=()=>{
+    i++;
+    if(i<mensagens.length) overlay.innerHTML=mensagens[i];
+    else {overlay.onclick=null; soltarConfetes();}
+  }
+}
+
+function soltarConfetes(){
+  const container=document.getElementById("confetes");
+  for(let i=0;i<100;i++){
+    const confete=document.createElement("div");
+    confete.classList.add("confete");
+    confete.style.left=Math.random()*window.innerWidth+"px";
+    confete.style.top="-20px";
+    confete.style.background=`hsl(${Math.random()*360},100%,50%)`;
+    confete.style.animationDuration=(2+Math.random()*3)+"s";
+    container.appendChild(confete);
+    setTimeout(()=>confete.remove(),5000);
+  }
+}
+
+function reiniciar(){ iniciarJogo(); }
+
+iniciarJogo();
+</script>
+</body>
+</html>
